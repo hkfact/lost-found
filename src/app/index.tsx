@@ -1,7 +1,9 @@
 import ItemCard from "@/components/ItemCard";
+import { fetchItems, uploadItem } from "@/api/items";
 import { Item } from "@/types";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+	ActivityIndicator,
 	FlatList,
 	Pressable,
 	StyleSheet,
@@ -9,27 +11,88 @@ import {
 	TextInput,
 	View,
 } from "react-native";
-const STARTER_ITEMS: Item[] = [
-	{ id: "1", title: "Blue water bottle", place: "Library, 2nd floor" },
-	{ id: "2", title: "Student card", place: "Cafeteria" },
-	{ id: "3", title: "USB-C charger", place: "Room B12" },
-];
+
 export default function Index() {
-	const [items, setItems] = useState<Item[]>(STARTER_ITEMS);
+	const [items, setItems] = useState<Item[]>([]);
 	const [title, setTitle] = useState("");
 	const [place, setPlace] = useState("");
+	const [isLoading, setIsLoading] = useState(true);
+	const [isSaving, setIsSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [isLoadError, setIsLoadError] = useState(false);
 	const canAdd = title.trim() !== "" && place.trim() !== "";
-	function addItem() {
-		if (!canAdd) return;
-		const newItem: Item = {
-			id: Date.now().toString(),
-			title: title.trim(),
-			place: place.trim(),
+
+	const requestItems = useCallback(() => fetchItems(), []);
+	const handleLoadedItems = useCallback((loadedItems: Item[]) => {
+		setItems(loadedItems);
+		setError(null);
+		setIsLoadError(false);
+	}, []);
+	const handleLoadError = useCallback((loadError: unknown) => {
+		setError(
+			loadError instanceof Error
+				? loadError.message
+				: "Unable to retrieve items.",
+		);
+		setIsLoadError(true);
+	}, []);
+	const finishLoading = useCallback(() => {
+		setIsLoading(false);
+	}, []);
+
+	useEffect(() => {
+		let isActive = true;
+		void requestItems()
+			.then((loadedItems) => {
+				if (isActive) handleLoadedItems(loadedItems);
+			})
+			.catch((loadError: unknown) => {
+				if (isActive) handleLoadError(loadError);
+			})
+			.finally(() => {
+				if (isActive) finishLoading();
+			});
+
+		return () => {
+			isActive = false;
 		};
-		setItems([newItem, ...items]);
-		setTitle("");
-		setPlace("");
+	}, [finishLoading, handleLoadError, handleLoadedItems, requestItems]);
+
+	function retryLoadingItems() {
+		setIsLoading(true);
+		setError(null);
+		setIsLoadError(false);
+		void requestItems()
+			.then(handleLoadedItems)
+			.catch(handleLoadError)
+			.finally(finishLoading);
 	}
+
+	async function addItem() {
+		if (!canAdd || isSaving) return;
+
+		setIsSaving(true);
+		setError(null);
+		setIsLoadError(false);
+		try {
+			const newItem = await uploadItem({
+				title: title.trim(),
+				place: place.trim(),
+			});
+			setItems((currentItems) => [newItem, ...currentItems]);
+			setTitle("");
+			setPlace("");
+		} catch (saveError) {
+			setError(
+				saveError instanceof Error
+					? saveError.message
+					: "Unable to save item.",
+			);
+		} finally {
+			setIsSaving(false);
+		}
+	}
+
 	return (
 		<View style={styles.screen}>
 			<Text style={styles.count}>{items.length} items reported</Text>
@@ -47,13 +110,28 @@ export default function Index() {
 					onChangeText={setPlace}
 				/>
 				<Pressable
-					style={[styles.button, !canAdd && styles.buttonDisabled]}
-					onPress={addItem}
-					disabled={!canAdd}
+					style={[
+						styles.button,
+						(!canAdd || isSaving) && styles.buttonDisabled,
+					]}
+					onPress={() => void addItem()}
+					disabled={!canAdd || isSaving}
 				>
-					<Text style={styles.buttonText}>Add item</Text>
+					<Text style={styles.buttonText}>
+						{isSaving ? "Saving..." : "Add item"}
+					</Text>
 				</Pressable>
 			</View>
+			{error && (
+				<View style={styles.errorContainer}>
+					<Text style={styles.errorText}>{error}</Text>
+					{isLoadError && items.length === 0 && (
+						<Pressable onPress={retryLoadingItems}>
+							<Text style={styles.retryText}>Retry</Text>
+						</Pressable>
+					)}
+				</View>
+			)}
 			<FlatList
 				data={items}
 				keyExtractor={(item) => item.id}
@@ -61,14 +139,22 @@ export default function Index() {
 					<ItemCard title={item.title} place={item.place} />
 				)}
 				ItemSeparatorComponent={Separator}
-				ListEmptyComponent={<Text>Nothing reported yet.</Text>}
+				ListEmptyComponent={
+					isLoading ? (
+						<ActivityIndicator accessibilityLabel="Loading items" />
+					) : (
+						<Text>Nothing reported yet.</Text>
+					)
+				}
 			/>
 		</View>
 	);
 }
+
 function Separator() {
 	return <View style={styles.separator} />;
 }
+
 const styles = StyleSheet.create({
 	screen: {
 		flex: 1,
@@ -104,6 +190,17 @@ const styles = StyleSheet.create({
 		color: "#ffffff",
 		fontWeight: "600",
 		fontSize: 16,
+	},
+	errorContainer: {
+		marginBottom: 12,
+	},
+	errorText: {
+		color: "#b91c1c",
+	},
+	retryText: {
+		color: "#111556",
+		fontWeight: "600",
+		marginTop: 6,
 	},
 	separator: {
 		height: 10,

@@ -2,6 +2,26 @@
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+## Firebase items API
+
+The app reads and writes item reports through the Express API in `../backend`.
+The API stores records in the Firestore `items` collection.
+
+1. Start the backend from the `backend` directory with `npm start`. It uses the
+   Firebase service account file in that directory by default. Keep this
+   credential private; the repository's root `.gitignore` excludes it. For a
+   different credential location, set `FIREBASE_SERVICE_ACCOUNT_PATH` before
+   starting the backend.
+2. Set `EXPO_PUBLIC_API_URL` to the backend URL in `frontend/.env.local`, for
+   example `EXPO_PUBLIC_API_URL=http://localhost:3000` for a local web client.
+   For an Android emulator use `http://10.0.2.2:3000`; for a physical device use
+   your computer's LAN IP address. The device and computer must be on the same
+   network.
+3. Start or restart Expo with `npx expo start` after changing the environment
+   variable.
+
+The backend defaults to port `3000`; set `PORT` to use another port.
+
 ## Get started
 
 1. Install dependencies
